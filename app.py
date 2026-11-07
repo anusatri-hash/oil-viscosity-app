@@ -201,4 +201,55 @@ with c_col1:
         yaxis_title="Kinematic Viscosity (cSt)",
         height=380,
         margin=dict(l=20, r=20, t=30, b=20),
-        legend=dict(orientation="h", yanchor="bottom
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    st.plotly_chart(fig_trend, use_container_width=True)
+
+# Right Chart: Control Chart
+with c_col2:
+    st.subheader("📊 Control Chart (Individual Chart)")
+    
+    ucl = fresh_40 * 1.15
+    lcl = fresh_40 * 0.85
+    
+    fig_control = go.Figure()
+    fig_control.add_trace(go.Scatter(x=[1, 2, 3, 4, 5, 6, 7, 8, 9], y=[46.0, 46.8, 47.3, 47.9, 48.5, 49.6, 50.8, 52.0, 54.1], mode='lines+markers', name='Viscosity', line=dict(color='#1E88E5', width=2)))
+    fig_control.add_hline(y=ucl, line_dash="dash", line_color="#E53935", annotation_text=f"UCL = {ucl:.2f}")
+    fig_control.add_hline(y=fresh_40, line_color="#4CAF50", annotation_text=f"CL = {fresh_40:.2f}")
+    fig_control.add_hline(y=lcl, line_dash="dash", line_color="#1E88E5", annotation_text=f"LCL = {lcl:.2f}")
+
+    fig_control.update_layout(
+        xaxis_title="Sample No.",
+        yaxis_title="Viscosity (cSt)",
+        height=380,
+        margin=dict(l=20, r=20, t=30, b=20)
+    )
+    st.plotly_chart(fig_control, use_container_width=True)
+
+st.write("")
+
+# ---------------------------------------------------------
+# 8. TABLES (RECENT DATA & ALERT LOG)
+# ---------------------------------------------------------
+b_col1, b_col2 = st.columns(2)
+
+with b_col1:
+    st.subheader("🗄️ Recent Test Data (from Database)")
+    df_mysql = pd.DataFrame({
+        "Sample No.": [5, 6, 7, 8, 9],
+        "Operating Hours (h)": [1000, 1250, 1500, 1750, op_hours],
+        "Viscosity (cSt)": [48.20, 48.70, 49.60, 50.80, meas_40_actual],
+        "Deviation (%)": ["+4.78%", "+5.87%", "+7.83%", "+10.43%", f"{dev_percent:+.2f}%"],
+        "Status": ["Normal", "Warning", "Warning", "Warning", status_label]
+    })
+    st.dataframe(df_mysql, use_container_width=True, hide_index=True)
+
+with b_col2:
+    st.subheader("🔔 Alert Log")
+    df_alert = pd.DataFrame({
+        "Timestamp": ["2026-11-07 10:24", "2026-11-01 09:10"],
+        "Machine ID": [machine_id, machine_id],
+        "Description": [status_msg, "Viscosity deviation +10.43% (Exceeds Warning limit +10%)"],
+        "Status": [status_label, "Warning"]
+    })
+    st.dataframe(df_alert, use_container_width=True, hide_index=True)
