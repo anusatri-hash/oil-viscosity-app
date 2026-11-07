@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import joblib
 
 # ---------------------------------------------------------
-# 1. การตั้งค่าหน้าเว็บ (Page Config & CSS Custom Theme)
+# 1. Page Configuration & Custom CSS (Crimson Dark Red Theme)
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="Oil Viscosity Dashboard",
@@ -13,23 +13,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS ตกแต่งธีมสีแดงเข้ม (Dark Red / Crimson Theme) ให้เหมือนในรูป
 st.markdown("""
 <style>
-    /* ซ่อน Header และ Footer หลักของ Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* สีพื้นหลัง Sidebar */
     [data-testid="stSidebar"] {
         background-color: #6B0D0D;
-        color: white;
     }
     [data-testid="stSidebar"] * {
         color: white !important;
     }
     
-    /* สไตล์การ์ด KPI ด้านบน */
     .kpi-card {
         background-color: #7A1212;
         color: white;
@@ -38,127 +33,133 @@ st.markdown("""
         text-align: center;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    .kpi-title {
-        font-size: 14px;
-        opacity: 0.9;
-        margin-bottom: 5px;
-    }
-    .kpi-value {
-        font-size: 28px;
-        font-weight: bold;
-    }
-    .kpi-sub {
-        font-size: 12px;
-        opacity: 0.8;
-    }
+    .kpi-title { font-size: 14px; opacity: 0.9; margin-bottom: 5px; }
+    .kpi-value { font-size: 26px; font-weight: bold; }
+    .kpi-sub { font-size: 12px; opacity: 0.8; }
     
-    /* การ์ดสถานะ Alarm (สีแดงสว่าง/ชมพูอ่อน) */
-    .kpi-alarm {
-        background-color: #FFD4D4;
-        border: 2px solid #D32F2F;
-        color: #B71C1C !important;
-        padding: 15px;
-        border-radius: 10px;
-        text-align: center;
-    }
-    .kpi-alarm .kpi-value {
-        color: #D32F2F !important;
-    }
-
-    /* ตาราง Dataframe */
-    .stDataFrame {
-        border-radius: 8px;
-        overflow: hidden;
-    }
+    .status-normal { background-color: #1B5E20; border: 2px solid #4CAF50; color: white; padding: 15px; border-radius: 10px; text-align: center; }
+    .status-warning { background-color: #E65100; border: 2px solid #FF9800; color: white; padding: 15px; border-radius: 10px; text-align: center; }
+    .status-alarm { background-color: #FFD4D4; border: 2px solid #D32F2F; color: #B71C1C !important; padding: 15px; border-radius: 10px; text-align: center; }
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 2. โหลดโมเดล Machine Learning
+# 2. Load Machine Learning Model (.pkl)
 # ---------------------------------------------------------
 @st.cache_resource
 def load_ml_model():
     try:
         return joblib.load('model.pkl')
-    except:
+    except Exception as e:
         return None
 
 model = load_ml_model()
 
 # ---------------------------------------------------------
-# 3. SIDEBAR NAVIGATION & STATUS
+# 3. SIDEBAR NAVIGATION & INPUTS
 # ---------------------------------------------------------
 with st.sidebar:
     st.markdown("## 🛢️ **OIL VISCOSITY**")
-    st.caption("Predictive Maintenance")
+    st.caption("Predictive Maintenance (ML Connected)")
     st.write("---")
     
-    menu = st.radio(
-        "เมนูหลัก",
-        ["📊 Dashboard", "📤 อัปโหลดข้อมูล (CSV)", "🗄️ ข้อมูลจาก MySQL", "🧠 พยากรณ์ความหนืด (ML)", "🔔 ประวัติการแจ้งเตือน", "⚙️ ตั้งค่าเกณฑ์ (Control Chart)"],
-        label_visibility="collapsed"
-    )
+    st.subheader("📥 Model Inputs")
+    machine_id = st.text_input("Machine ID", "HYD-01")
+    op_hours = st.number_input("Operating Hours", min_value=0, value=2000, step=100)
+    fresh_40 = st.number_input("Fresh Viscosity 40°C (Baseline)", min_value=1.0, value=46.0, step=1.0)
+    fresh_100 = st.number_input("Fresh Viscosity 100°C", min_value=1.0, value=6.8, step=0.1)
+    meas_100 = st.number_input("Measured Viscosity 100°C", min_value=1.0, value=6.5, step=0.1)
+    meas_40_actual = st.number_input("Measured Viscosity 40°C (Actual)", min_value=1.0, value=52.0, step=0.5)
     
     st.write("---")
-    st.markdown("🟢 **เชื่อมต่อฐานข้อมูล**<br><small>MySQL : oil_viscosity_db</small>", unsafe_allow_html=True)
+    st.markdown("🟢 **Database Status**<br><small>Connected: oil_viscosity_db</small>", unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 4. TOP BAR & FILTERS (หัวข้อ + ตัวกรองด้านบน)
+# 4. ML PREDICTION & ALERT LOGIC
 # ---------------------------------------------------------
-# Header Bar สีแดงเข้ม
+if model is not None:
+    input_data = np.array([[op_hours, fresh_40, fresh_100, meas_100]])
+    predicted_visc_40 = float(model.predict(input_data)[0])
+    model_status_msg = "🟢 Connected to model.pkl successfully"
+else:
+    predicted_visc_40 = fresh_40 * (1 + (op_hours / 10000) * 0.8)
+    model_status_msg = "⚠️ model.pkl not found (Using fallback calculation)"
+
+dev_percent = ((meas_40_actual - fresh_40) / fresh_40) * 100
+
+if abs(dev_percent) >= 15:
+    status_label = "Alarm"
+    status_class = "status-alarm"
+    status_msg = f"Viscosity deviation {dev_percent:+.2f}% (Exceeds Alarm limit ±15%)"
+elif abs(dev_percent) >= 10:
+    status_label = "Warning"
+    status_class = "status-warning"
+    status_msg = f"Viscosity deviation {dev_percent:+.2f}% (Exceeds Warning limit ±10%)"
+else:
+    status_label = "Normal"
+    status_class = "status-normal"
+    status_msg = f"Viscosity within normal range ({dev_percent:+.2f}%)"
+
+# ---------------------------------------------------------
+# 5. DASHBOARD HEADER & FILTERS
+# ---------------------------------------------------------
 st.markdown("""
-<div style="background-color: #8B0000; padding: 15px; border-radius: 8px; color: white; margin-bottom: 20px;">
+<div style="background-color: #8B0000; padding: 15px; border-radius: 8px; color: white; margin-bottom: 15px;">
     <h2 style="margin:0; color:white;">📈 Dashboard</h2>
-    <p style="margin:0; opacity:0.8;">ติดตามแนวโน้มความหนืดน้ำมันไฮดรอลิก และแจ้งเตือนการบำรุงรักษา</p>
+    <p style="margin:0; opacity:0.8;">Hydraulic Oil Viscosity Trend & Predictive Maintenance Alerts</p>
 </div>
 """, unsafe_allow_html=True)
 
-# ตัวกรอง 3 ช่อง
+st.caption(model_status_msg)
+
+# Filters Row
 f_col1, f_col2, f_col3 = st.columns(3)
 with f_col1:
-    selected_machine = st.selectbox("เครื่องจักร", ["HYD-01", "HYD-02", "HYD-03"])
+    st.selectbox("Machine Select", ["HYD-01", "HYD-02", "HYD-03"])
 with f_col2:
-    selected_cycle = st.selectbox("รอบการใช้งาน (Cycle)", ["CYCLE-03", "CYCLE-02", "CYCLE-01"])
+    st.selectbox("Cycle Select", ["CYCLE-03", "CYCLE-02", "CYCLE-01"])
 with f_col3:
-    selected_date = st.date_input("ช่วงข้อมูล", [])
+    st.date_input("Date Range", [])
+
+st.write("")
 
 # ---------------------------------------------------------
-# 5. KPI CARDS (การ์ดสรุป 4 ช่อง)
+# 6. EXECUTIVE KPI CARDS
 # ---------------------------------------------------------
 k1, k2, k3, k4 = st.columns(4)
 
 with k1:
-    st.markdown("""
+    st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">💧 ความหนืดล่าสุด (วัดได้)</div>
-        <div class="kpi-value">52.00 cSt</div>
-        <div class="kpi-sub">(ที่ 2,000 ชั่วโมง)</div>
+        <div class="kpi-title">💧 Latest Measured (40°C)</div>
+        <div class="kpi-value">{meas_40_actual:.2f} cSt</div>
+        <div class="kpi-sub">(at {op_hours:,} Hours)</div>
     </div>
     """, unsafe_allow_html=True)
 
 with k2:
-    st.markdown("""
+    st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">🧠 ค่าพยากรณ์ (ML)</div>
-        <div class="kpi-value">54.10 cSt</div>
-        <div class="kpi-sub">(ที่ 2,200 ชั่วโมง)</div>
+        <div class="kpi-title">🧠 Predicted Value (ML)</div>
+        <div class="kpi-value">{predicted_visc_40:.2f} cSt</div>
+        <div class="kpi-sub">(at {op_hours + 200:,} Hours)</div>
     </div>
     """, unsafe_allow_html=True)
 
 with k3:
-    st.markdown("""
+    st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">🛢️ ค่าอ้างอิง (Fresh Oil)</div>
-        <div class="kpi-value">46.00 cSt</div>
+        <div class="kpi-title">🛢️ Baseline (Fresh Oil)</div>
+        <div class="kpi-value">{fresh_40:.2f} cSt</div>
         <div class="kpi-sub">&nbsp;</div>
     </div>
     """, unsafe_allow_html=True)
 
 with k4:
-    st.markdown("""
-    <div class="kpi-alarm">
-        <div class="kpi-title" style="color:#B71C1C;">⚠️ สถานะปัจจุบัน</div>
-        <div class="kpi-value">Alarm</div>
+    st.markdown(f"""
+    <div class="{status_class}">
+        <div class="kpi-title">⚠️ Current Status</div>
+        <div class="kpi-value">{status_label}</div>
         <div class="kpi-sub">&nbsp;</div>
     </div>
     """, unsafe_allow_html=True)
@@ -166,89 +167,38 @@ with k4:
 st.write("")
 
 # ---------------------------------------------------------
-# 6. MIDDLE SECTION (CHARTS: แนวโน้มความหนืด + CONTROL CHART)
+# 7. TIME-SERIES & CONTROL CHARTS
 # ---------------------------------------------------------
 c_col1, c_col2 = st.columns([1.2, 1])
 
-# --- กราฟซ้าย: แนวโน้มความหนืด (Viscosity Trend) ---
+# Left Chart: Viscosity Trend
 with c_col1:
-    st.subheader("📈 แนวโน้มความหนืด (Viscosity Trend)")
+    st.subheader("📈 Viscosity Trend")
     
-    # ข้อมูลจำลองสำหรับกราฟ Trend
-    hours = [0, 250, 500, 750, 1000, 1250, 1500, 1750, 2000]
-    measured_visc = [46.0, 46.3, 46.6, 47.1, 48.2, 48.7, 49.6, 50.8, 52.0]
-    pred_hours = [2000, 2250]
-    pred_visc = [52.0, 54.1]
+    hours_axis = np.linspace(0, max(2500, op_hours + 500), 10)
+    
+    if model is not None:
+        sim_X = np.column_stack([
+            hours_axis,
+            np.full_like(hours_axis, fresh_40),
+            np.full_like(hours_axis, fresh_100),
+            np.full_like(hours_axis, meas_100)
+        ])
+        trend_y = model.predict(sim_X)
+    else:
+        trend_y = fresh_40 * (1 + (hours_axis / 10000) * 0.8)
 
     fig_trend = go.Figure()
-
-    # เส้น Measured
-    fig_trend.add_trace(go.Scatter(x=hours, y=measured_visc, mode='lines+markers', name='ค่าจริง (Measured)', line=dict(color='#1E88E5', width=2)))
-    # เส้น Predicted
-    fig_trend.add_trace(go.Scatter(x=pred_hours, y=pred_visc, mode='lines+markers', name='ค่าพยากรณ์ (Predicted)', line=dict(color='#FB8C00', dash='dash', width=2)))
-    # เส้น Baseline (46.0)
-    fig_trend.add_hline(y=46.0, line_dash="solid", line_color="#4CAF50", annotation_text="ค่าอ้างอิง (Baseline)")
-    # เส้น Warning (+10% = 50.6)
-    fig_trend.add_hline(y=50.6, line_dash="dash", line_color="#FDD835", annotation_text="Warning Limit (+10%)")
-    # เส้น Alarm (+15% = 52.9)
-    fig_trend.add_hline(y=52.9, line_dash="dash", line_color="#E53935", annotation_text="Alarm Limit (+15%)")
+    fig_trend.add_trace(go.Scatter(x=hours_axis, y=trend_y, mode='lines', name='Predicted (ML)', line=dict(color='#FB8C00', dash='dash', width=2)))
+    fig_trend.add_trace(go.Scatter(x=[op_hours], y=[meas_40_actual], mode='markers', name='Measured (Actual)', marker=dict(color='#1E88E5', size=12)))
+    
+    fig_trend.add_hline(y=fresh_40, line_color="#4CAF50", annotation_text="Baseline")
+    fig_trend.add_hline(y=fresh_40 * 1.10, line_dash="dash", line_color="#FDD835", annotation_text="Warning (+10%)")
+    fig_trend.add_hline(y=fresh_40 * 1.15, line_dash="dash", line_color="#E53935", annotation_text="Alarm (+15%)")
 
     fig_trend.update_layout(
         xaxis_title="Operating Hours (h)",
         yaxis_title="Kinematic Viscosity (cSt)",
         height=380,
         margin=dict(l=20, r=20, t=30, b=20),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-    st.plotly_chart(fig_trend, use_container_width=True)
-
-# --- กราฟขวา: Control Chart (Individual Chart) ---
-with c_col2:
-    st.subheader("📊 Control Chart (Individual Chart)")
-    
-    sample_no = list(range(1, 10))
-    sample_visc = [46.0, 46.8, 47.3, 47.9, 48.5, 49.6, 50.8, 52.0, 54.1]
-
-    fig_control = go.Figure()
-    fig_control.add_trace(go.Scatter(x=sample_no, y=sample_visc, mode='lines+markers', name='Viscosity', line=dict(color='#1E88E5', width=2)))
-    
-    # เส้น UCL / CL / LCL
-    fig_control.add_hline(y=52.90, line_dash="dash", line_color="#E53935", annotation_text="UCL = 52.90")
-    fig_control.add_hline(y=46.00, line_dash="solid", line_color="#4CAF50", annotation_text="CL = 46.00")
-    fig_control.add_hline(y=39.10, line_dash="dash", line_color="#1E88E5", annotation_text="LCL = 39.10")
-
-    fig_control.update_layout(
-        xaxis_title="Sample No.",
-        yaxis_title="Viscosity (cSt)",
-        height=380,
-        margin=dict(l=20, r=20, t=30, b=20)
-    )
-    st.plotly_chart(fig_control, use_container_width=True)
-
-st.write("")
-
-# ---------------------------------------------------------
-# 7. BOTTOM SECTION (TABLES: ข้อมูล MySQL + ALERT LOG)
-# ---------------------------------------------------------
-b_col1, b_col2 = st.columns(2)
-
-with b_col1:
-    st.subheader("🗄️ ข้อมูลการทดสอบล่าสุด (จาก MySQL)")
-    df_mysql = pd.DataFrame({
-        "Sample No.": [5, 6, 7, 8, 9],
-        "Operating Hours (h)": ["1,000", "1,250", "1,500", "1,750", "2,000"],
-        "Viscosity (cSt)": [48.20, 48.70, 49.60, 50.80, 52.00],
-        "Deviation (%)": ["+4.78", "+5.87", "+7.83", "+10.43", "+13.04"],
-        "Status": ["Normal", "Warning", "Warning", "Warning", "Alarm"]
-    })
-    st.dataframe(df_mysql, use_container_width=True, hide_index=True)
-
-with b_col2:
-    st.subheader("🔔 การแจ้งเตือน (Alert Log)")
-    df_alert = pd.DataFrame({
-        "วันที่ / เวลา": ["30 เม.ย. 2025 10:24", "15 เม.ย. 2025 09:10"],
-        "เครื่องจักร": ["HYD-01", "HYD-01"],
-        "รายละเอียด": ["ค่าความหนืดเบี่ยงเบน +13.04% (เกินเกณฑ์ Alarm +15%)", "ค่าความหนืดเบี่ยงเบน +10.43% (เกินเกณฑ์ Warning +10%)"],
-        "สถานะ": ["Alarm", "Warning"]
-    })
-    st.dataframe(df_alert, use_container_width=True, hide_index=True)
+        legend=dict(orientation="h", yanchor="bottom
